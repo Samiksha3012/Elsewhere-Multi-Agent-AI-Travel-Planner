@@ -1,34 +1,55 @@
 # Elsewhere Travel Planner
 
-Elsewhere is a React/Vite travel-planning interface backed by the existing FastAPI service and LangGraph agents. PostgreSQL remains the LangGraph checkpoint store.
+Elsewhere is an AI-assisted travel-planning web application. Travellers can provide a destination, dates, trip length, budget, group size, departure city, and personal preferences, then request flight research, hotel research, a day-by-day itinerary, or a combined travel plan. The interface brings those results together while making clear that provider data and AI-generated cost suggestions are not confirmed bookings or live quotes.
 
-## Backend setup
+## What the project uses
 
-Use Python 3.10 or newer and a reachable PostgreSQL database. From the project root in PowerShell:
+### Frontend
 
-```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install -r requirements.txt
-```
+- **React 19** builds the interactive single-page application.
+- **Vite 7** provides the frontend development server and production bundler.
+- **Lucide React** supplies interface icons.
+- **React Markdown** renders the planner's formatted text responses.
+- **Browser storage** keeps trip details and saved plans on the current browser.
 
-Create a root `.env` file locally and set your credentials and database URL there. Keep this file private; none of these credentials belong in the frontend. `.env` and `frontend/.env` are ignored by Git.
+### Backend and AI workflow
+
+- **Python 3.10+** runs the backend.
+- **FastAPI** exposes the HTTP API; **Uvicorn** serves it.
+- **Pydantic** validates and normalizes trip requests.
+- **LangGraph** builds and executes the sequential travel-planning workflow.
+- **LangChain Core** supplies message and model interfaces.
+- **Groq via `langchain-groq`** runs the LLM steps using the `openai/gpt-oss-20b` model.
+- **Aviationstack** provides flight-feed records through the flight connector.
+- **Tavily** searches the web for hotel references.
+- **PostgreSQL**, accessed with **Psycopg 3** and `langgraph-checkpoint-postgres`, stores LangGraph checkpoints.
+- **python-dotenv** loads local environment configuration.
+
+## Architecture
 
 ```text
-GROQ_API_KEY=your_groq_key
-AVIATIONSTACK_API_KEY=your_aviationstack_key
-TAVILY_API_KEY=your_tavily_key
-DATABASE_URL=postgresql://user:password@host:5432/database
-FRONTEND_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
+React + Vite browser app
+        |  JSON over HTTP
+        v
+FastAPI API (Pydantic validation, CORS, response formatting)
+        |  LangGraph state and selected workflow
+        v
+  Flight agent ------> Aviationstack flight feed
+  Hotel agent -------> Tavily hotel web search
+  Itinerary agent ---> Groq-hosted LLM
+        |
+        +-- all sections selected --> Final response agent (Groq-hosted LLM)
+        |
+        +-- graph checkpoints -----> PostgreSQL via PostgresSaver
 ```
 
-Start the API from the project root:
+The frontend sends trip details to `POST /plan-trip`. The API validates required values and date ranges, builds a normalized travel query, and invokes the planner with a unique thread ID. LangGraph shares a typed travel state across the selected agents and runs them in sequence. Flight and hotel agents call their provider integrations; the itinerary agent uses the LLM to produce a daily plan that considers the trip details and gathered research. When all sections are selected, the final agent composes the results into an integrated response. The API parses provider text into structured flight and hotel records and returns those together with the itinerary and, for the combined workflow, the complete plan.
 
-```powershell
-uvicorn api:app --reload
-```
+The API supports focused requests as well as the full workflow. `sections` can include `flights`, `hotels`, and/or `itinerary`; if omitted, all are selected and the final response agent also runs. Each request gets its own graph thread ID. The PostgreSQL checkpointer is set up when the API starts and shared by compiled planner graphs during that API process. The same graph can also be invoked through the command-line entry point, `python main.py`.
 
-The API is available at `http://localhost:8000`; interactive API documentation is at `http://localhost:8000/docs`. Startup initializes the PostgreSQL checkpointer. `POST /plan-trip` accepts JSON shaped like:
+## API example
+
+`POST /plan-trip` accepts JSON such as:
 
 ```json
 {
@@ -42,39 +63,75 @@ The API is available at `http://localhost:8000`; interactive API documentation i
   "departure_date": "2026-11-01",
   "return_date": "2026-11-06",
   "preferences": "Food and gardens",
-  "sections": ["flights"]
+  "sections": ["flights", "hotels", "itinerary"]
 }
 ```
 
-`sections` accepts `flights`, `hotels`, and/or `itinerary`; the default is all three, which also runs the existing final agent. Each focused selection runs only its corresponding graph node. All graph paths use the same PostgreSQL checkpointer. The response includes flight and hotel arrays, an itinerary, and `complete_plan` for the integrated workflow. The original CLI remains available with `python main.py`.
+The API also provides `GET /health`. When running locally, interactive API documentation is available at `http://localhost:8000/docs`.
 
-The flight connector currently returns Aviationstack feed records without filtering by the requested route or dates, and the provider response does not include fares. The hotel connector returns Tavily web-search references, not verified availability, room rates, or property images. The interface labels these limitations rather than presenting estimates as live results.
+## Data and integration limitations
 
-## Frontend setup
+- The Aviationstack connector currently returns flight-feed records without filtering them by the requested route or dates. The provider response used here does not include fares.
+- The Tavily integration returns hotel-related web-search references; it does not verify hotel availability, room rates, or property images.
+- Itinerary activities and expense amounts are AI-generated suggestions and estimates, not confirmed prices or bookings.
+- Trip details and saved plans are stored in the visitor's browser, not in a user-account or trip-history service.
 
-Install Node.js 20.19+ (or 22.12+) and npm. In a separate terminal:
+## Setup
+
+### Requirements
+
+- Python 3.10 or newer
+- A reachable PostgreSQL database
+- Node.js 20.19+ (or 22.12+) and npm
+- API credentials for Groq, Aviationstack, and Tavily
+
+### Backend
+
+From the project root in PowerShell, create and activate a virtual environment, then install dependencies:
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+```
+
+Create a root `.env` file with your local credentials and database connection string. Do not commit real credentials. The root `.gitignore` excludes `.env` files.
+
+```text
+GROQ_API_KEY=your_groq_key
+AVIATIONSTACK_API_KEY=your_aviationstack_key
+TAVILY_API_KEY=your_tavily_key
+DATABASE_URL=your_postgresql_connection_string
+FRONTEND_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
+```
+
+Start the API from the project root:
+
+```powershell
+uvicorn api:app --reload
+```
+
+The API runs at `http://localhost:8000`. Startup initializes the PostgreSQL checkpointer. The frontend origin can be changed in `FRONTEND_ORIGINS`; restart the API after changing it.
+
+### Frontend
+
+In a separate terminal:
 
 ```powershell
 Set-Location .\frontend
 npm install
+```
+
+Create `frontend/.env` with the API URL:
+
+```text
+VITE_API_URL=http://localhost:8000
+```
+
+Start the Vite development server:
+
+```powershell
 npm run dev
 ```
 
-Create `frontend/.env` locally with `VITE_API_URL=http://localhost:8000`. Open the local URL printed by Vite (usually `http://localhost:5173`). Update `FRONTEND_ORIGINS` in the root `.env` if the frontend uses a different origin, then restart the backend. Trip details and saved complete plans are stored in the current browser.
-
-To create a production bundle, run `npm run build` inside `frontend`; Vite writes it to `frontend/dist`.
-
-## Graph reuse
-
-Importing `main.py` defines the existing state and agents without connecting to PostgreSQL or invoking the graph. `connect_database()` sets up and returns the PostgreSQL connection and saver; `build_app(checkpointer, sections=...)` compiles the existing nodes and edges against that saver. The API owns these resources for its lifespan, while the command-line entry point retains its interactive invocation behavior.
-
-## Clone the repository
-
-Clone the project from GitHub and change into its directory:
-
-```powershell
-git clone https://github.com/Samiksha3012/everywhere---AI-Travel-Planner.git
-Set-Location .\everywhere---AI-Travel-Planner
-```
-
-Then follow the backend and frontend setup instructions above.
+Open the local URL printed by Vite (usually `http://localhost:5173`). To generate a production bundle, run `npm run build` from the `frontend` directory; Vite writes the bundle to `frontend/dist`.

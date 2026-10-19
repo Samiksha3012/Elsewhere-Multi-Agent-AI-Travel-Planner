@@ -67,3 +67,14 @@ To create a production bundle, run `npm run build` inside `frontend`; Vite write
 ## Graph reuse
 
 Importing `main.py` defines the existing state and agents without connecting to PostgreSQL or invoking the graph. `connect_database()` sets up and returns the PostgreSQL connection and saver; `build_app(checkpointer, sections=...)` compiles the existing nodes and edges against that saver. The API owns these resources for its lifespan, while the command-line entry point retains its interactive invocation behavior.
+
+## Clone the repository
+
+Clone the project from GitHub and change into its directory:
+
+```powershell
+git clone https://github.com/Samiksha3012/everywhere---AI-Travel-Planner.git
+Set-Location .\everywhere---AI-Travel-Planner
+```
+
+Then follow the backend and frontend setup instructions above.

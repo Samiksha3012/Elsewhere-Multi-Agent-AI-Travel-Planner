@@ -40,6 +40,30 @@ class PlanTripRequest(BaseModel):
             raise ValueError("query must not be blank")
         return value
 
+    @field_validator("departure_city", "destination_city", "destination_country", "preferences")
+    @classmethod
+    def strip_optional_strings(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        value = value.strip()
+        return value or None
+
+    @field_validator("sections", mode="before")
+    @classmethod
+    def normalize_sections(cls, value):
+        if value is None:
+            raise ValueError("sections must contain unique planner sections")
+        if isinstance(value, str):
+            value = [value]
+        normalized = []
+        for item in value:
+            if item is None:
+                continue
+            item_str = str(item).strip()
+            if item_str:
+                normalized.append(item_str.lower())
+        return normalized
+
     @field_validator("sections")
     @classmethod
     def sections_must_be_unique_and_nonempty(
@@ -48,6 +72,9 @@ class PlanTripRequest(BaseModel):
     ) -> list[str]:
         if not value or len(value) != len(set(value)):
             raise ValueError("sections must contain unique planner sections")
+        invalid = [section for section in value if section not in {"flights", "hotels", "itinerary"}]
+        if invalid:
+            raise ValueError(f"Unsupported planner sections: {sorted(set(invalid))}")
         return value
 
     @model_validator(mode="after")
@@ -63,47 +90,101 @@ class PlanTripRequest(BaseModel):
         return self
 
 
-def parse_flights(raw_results: str) -> list[dict[str, str]]:
+def parse_flights(raw_results: str | None) -> list[dict[str, str]]:
+    if not raw_results:
+        return []
+
+    normalized = str(raw_results).strip()
+    if not normalized:
+        return []
+
     flights = []
-    for block in raw_results.strip().split("\n\n"):
-        fields = {}
+    for block in normalized.split("\n\n"):
+        fields: dict[str, str] = {}
         for line in block.splitlines():
             key, separator, value = line.partition(":")
             if separator:
-                fields[key.strip().lower()] = value.strip()
-        if fields:
-            flights.append(
-                {
-                    "flight_number": fields.get("flight", "Unknown flight"),
-                    "airline": fields.get("airline", "Unknown airline"),
-                    "departure": fields.get("departure", "Unknown"),
-                    "arrival": fields.get("arrival", "Unknown"),
-                    "status": fields.get("status", "Unknown"),
-                    "departure_time": fields.get("departure time", ""),
-                    "arrival_time": fields.get("arrival time", ""),
-                    "duration": fields.get("duration", ""),
-                }
-            )
+                key_name = key.strip().lower()
+                value_name = value.strip()
+                if key_name and value_name:
+                    fields[key_name] = value_name
+        if not fields:
+            continue
+
+        flight_number = (
+            fields.get("flight")
+            or fields.get("flight number")
+            or fields.get("flight_number")
+            or fields.get("flight no")
+            or fields.get("flightno")
+            or "Unknown flight"
+        )
+        airline = fields.get("airline") or fields.get("carrier") or fields.get("airline name") or "Unknown airline"
+        departure = fields.get("departure") or fields.get("departure airport") or "Unknown"
+        arrival = fields.get("arrival") or fields.get("arrival airport") or "Unknown"
+        status = fields.get("status") or fields.get("flight status") or "Unknown"
+        departure_time = fields.get("departure time") or fields.get("scheduled departure") or ""
+        arrival_time = fields.get("arrival time") or fields.get("scheduled arrival") or ""
+        duration = fields.get("duration") or fields.get("flight duration") or ""
+
+        flights.append(
+            {
+                "flight_number": flight_number,
+                "airline": airline,
+                "departure": departure,
+                "arrival": arrival,
+                "status": status,
+                "departure_time": departure_time,
+                "arrival_time": arrival_time,
+                "duration": duration,
+            }
+        )
     return flights
 
 
-def parse_hotels(raw_results: str) -> list[dict[str, str]]:
-    hotels = []
-    chunks = re.split(r"(?m)(?=^\d+\.\s+\*\*)", raw_results.strip())
+def parse_hotels(raw_results: str | None) -> list[dict[str, str]]:
+    if not raw_results:
+        return []
+
+    normalized = str(raw_results).strip()
+    if not normalized:
+        return []
+
+    hotels: list[dict[str, str]] = []
+    chunks = re.split(r"(?m)(?=^\d+\.\s+)", normalized)
+    if len(chunks) == 1:
+        chunks = [normalized]
+
     for chunk in chunks:
-        lines = chunk.strip().splitlines()
+        lines = [line.strip() for line in chunk.strip().splitlines() if line.strip()]
         if not lines:
             continue
-        title = re.match(r"^\d+\.\s+\*\*(.*?)\*\*", lines[0])
+
+        title_match = re.match(r"^\d+\.\s+\*{0,2}(.*?)\*{0,2}\s*$", lines[0])
+        if title_match:
+            title = title_match.group(1).strip()
+            remaining = lines[1:]
+        else:
+            clean_title = re.sub(r"^\d+\.\s*", "", lines[0]).strip()
+            title = clean_title.strip("*").strip()
+            remaining = lines[1:]
+
         if not title:
             continue
-        url = lines[1].strip() if len(lines) > 1 else ""
-        description = " ".join(line.strip() for line in lines[2:]).strip()
+
+        url = ""
+        description_lines = []
+        for line in remaining:
+            if not url and re.match(r"^https?://", line, flags=re.IGNORECASE):
+                url = line
+                continue
+            description_lines.append(line)
+
         hotels.append(
             {
-                "name": title.group(1).strip(),
+                "name": title,
                 "url": url,
-                "description": description,
+                "description": " ".join(description_lines).strip(),
             }
         )
     return hotels

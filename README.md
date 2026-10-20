@@ -47,10 +47,11 @@ then choose a focused flight, hotel or itinerary search, or ask the planner to
 bring all three together.
 
 Behind the interface, a FastAPI service runs a LangGraph workflow. The flight
-agent retrieves records from Aviationstack, the hotel agent gathers web-search
-references with Tavily, and the itinerary agent uses a Groq-hosted language
-model to create a daily plan informed by your trip details and available
-research. For a complete plan, a final model step combines the results.
+agent retrieves records from Aviationstack while the hotel agent gathers
+web-search references with Tavily; these independent searches run in parallel.
+The itinerary agent uses a Groq-hosted language model to create a daily plan
+after the requested research completes. For a complete plan, a final model step
+combines the results.
 
 Elsewhere is designed to be clear about what its sources can and cannot confirm:
 flight records are not route-filtered or priced, hotel references are not live
@@ -74,7 +75,9 @@ planning assistant, not a booking service.
 1. **Submit.** The React frontend sends a validated trip request to `POST /plan-trip`.
 2. **Normalize.** FastAPI validates the request with Pydantic, normalizes the trip
    details and creates a unique LangGraph thread ID.
-3. **Plan.** LangGraph runs the requested sections in sequence over shared state:
+3. **Plan.** LangGraph runs independent flight and hotel research in parallel.
+   When requested, the itinerary agent waits for those results, then the final
+   response agent combines the complete plan:
 
    | Agent | Source | Output |
    |---|---|---|
@@ -95,13 +98,17 @@ planning assistant, not a booking service.
 flowchart TD
     A["Browser: React 19 + Vite<br/>Trip form, destination explorer, saved plans"]
     B["FastAPI<br/>Pydantic validation, CORS, response formatting"]
-    subgraph G["LangGraph sequential workflow"]
+    subgraph G["LangGraph workflow"]
         direction TB
+        S(("Start"))
         F["Flight agent"]
         H["Hotel agent"]
         I["Itinerary agent"]
         R["Final response agent<br/>(complete plan only)"]
-        F --> H --> I --> R
+        S --> F
+        S --> H
+        F & H --> I
+        I --> R
     end
     AV[("Aviationstack")]
     TV[("Tavily")]
@@ -178,7 +185,8 @@ When the backend is running, interactive documentation is available at
 ## Design notes
 
 - **Agent workflow:** a LangGraph graph with separate flight, hotel and
-  itinerary agents sharing one trip state. Agents run sequentially, and a final
+  itinerary agents sharing one trip state. Flight and hotel research run in
+  parallel; the itinerary waits for selected research results, and a final
   response agent combines the results for complete plans.
 - **Focused or complete searches:** the `sections` field lets the same endpoint
   run a single agent or the whole workflow.

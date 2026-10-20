@@ -8,7 +8,6 @@ from langgraph.checkpoint.postgres import PostgresSaver
 from langchain_core.messages import (
         AnyMessage, 
         HumanMessage, 
-        AIMessage,
         SystemMessage
 )
 
@@ -28,17 +27,14 @@ class TravelState(TypedDict):
     flight_results: str
     hotel_results: str
     itinerary: str
-    llm_calls: int
+    llm_calls: Annotated[int, operator.add]
 
 def flight_agent(state: TravelState):
     query = state["user_query"]
     flight_data = search_flights(query)
     return {
         "flight_results": flight_data,
-        "messages": [
-            AIMessage(content=f"Flight results fetched")
-        ],
-        "llm_calls": state.get("llm_calls", 0) + 1
+        "llm_calls": 1
     }
 
 def hotel_agent(state: TravelState):
@@ -47,10 +43,7 @@ def hotel_agent(state: TravelState):
 
     return {
         "hotel_results": hotel_results,
-        "messages": [
-            AIMessage(content="Hotel information fetched")
-        ],
-        "llm_calls": state.get("llm_calls", 0) + 1
+        "llm_calls": 1
     }
 
 def itinerary_agent(state: TravelState):
@@ -70,7 +63,13 @@ def itinerary_agent(state: TravelState):
     For each day, include morning, afternoon, and evening suggestions, named
     attractions and restaurant ideas when relevant, and clearly labeled
     approximate activity or meal expenses in the destination's local currency.
-    Treat expenses as AI estimates, not live quotes or confirmed prices.
+    Return readable Markdown using a short bullet list for each day. Put each
+    activity on its own bullet and label it Morning, Afternoon, or Evening.
+    Do not use tables, pipe characters, code fences, or HTML. Do not add a
+    combined trip-cost table or totals. Flight fares and accommodation rates
+    are unavailable; never invent or estimate them. Only give approximate
+    activity and meal costs, clearly labeled as AI estimates rather than live
+    quotes or confirmed prices.
     """
 
     response = ChatGroq(model="openai/gpt-oss-20b").invoke([
@@ -83,14 +82,14 @@ def itinerary_agent(state: TravelState):
     return {
         "itinerary": response.content,
         "messages": [response],
-        "llm_calls": state.get("llm_calls", 0) + 1
+        "llm_calls": 1
     }
 
 # Final Response Agent
 def final_agent(state: TravelState):
 
     final_prompt = f"""
-    Generate final travel response.
+    Generate final best recommended itinerary plan.
 
     Flights:
     {state['flight_results']}
@@ -100,6 +99,11 @@ def final_agent(state: TravelState):
 
     Itinerary:
     {state['itinerary']}
+
+    Give best recommended itenary plan using the above information.
+    This is a recommendation or suggestion for the user based on the above information.
+    Do not include any other information or make up any information.
+    Make sure to include all the information in a well formatted manner.
     """
 
     response = ChatGroq(model="openai/gpt-oss-20b").invoke([
@@ -108,7 +112,7 @@ def final_agent(state: TravelState):
 
     return {
         "messages": [response],
-        "llm_calls": state.get("llm_calls", 0) + 1
+        "llm_calls": 1
     }
 
 def connect_database() -> tuple[psycopg.Connection, PostgresSaver]:
@@ -126,6 +130,7 @@ def connect_database() -> tuple[psycopg.Connection, PostgresSaver]:
     return connection, checkpointer
 
 
+
 def build_app(
     checkpointer: PostgresSaver,
     sections: tuple[str, ...] | None = None,
@@ -137,29 +142,59 @@ def build_app(
         "hotels": ("hotel_agent", hotel_agent),
         "itinerary": ("itinerary_agent", itinerary_agent),
     }
-    selected_sections = set(agent_nodes if sections is None else sections)
-    unknown_sections = selected_sections.difference(agent_nodes)
-    if unknown_sections or not selected_sections:
-        raise ValueError(f"Unsupported planner sections: {sorted(unknown_sections)}")
 
-    steps = [
-        agent_nodes[section]
-        for section in agent_nodes
+    selected_sections = set(
+        agent_nodes if sections is None else sections
+    )
+
+    unknown_sections = selected_sections.difference(agent_nodes)
+
+    if unknown_sections or not selected_sections:
+        raise ValueError(
+            f"Unsupported planner sections: {sorted(unknown_sections)}"
+        )
+
+    # Register only the requested agents
+    for section, (name, node) in agent_nodes.items():
+        if section in selected_sections:
+            graph.add_node(name, node)
+
+    # Include final_agent only when all sections are selected
+    include_final = (
+        sections is None
+        or selected_sections == set(agent_nodes)
+    )
+
+    if include_final:
+        graph.add_node("final_agent", final_agent)
+
+    search_nodes = [
+        agent_nodes[section][0]
+        for section in ("flights", "hotels")
         if section in selected_sections
     ]
-    if sections is None or selected_sections == set(agent_nodes):
-        steps.append(("final_agent", final_agent))
+    for node_name in search_nodes:
+        graph.add_edge(START, node_name)
 
-    for name, node in steps:
-        graph.add_node(name, node)
+    # Run itinerary after the selected search agents finish
+    if "itinerary" in selected_sections:
+        if search_nodes:
+            graph.add_edge(search_nodes, "itinerary_agent")
+        else:
+            graph.add_edge(START, "itinerary_agent")
 
-    graph.add_edge(START, steps[0][0])
-    for current, following in zip(steps, steps[1:]):
-        graph.add_edge(current[0], following[0])
-    graph.add_edge(steps[-1][0], END)
+        if include_final:
+            graph.add_edge("itinerary_agent", "final_agent")
+            graph.add_edge("final_agent", END)
+        else:
+            graph.add_edge("itinerary_agent", END)
+
+    else:
+        # No itinerary requested: finish after the search agents
+        for node_name in search_nodes:
+            graph.add_edge(node_name, END)
 
     return graph.compile(checkpointer=checkpointer)
-
 
 if __name__ == "__main__":
     user_input = input("Enter travel request: ")

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import {
   ArrowLeft,
   ArrowRight,
@@ -256,6 +257,25 @@ function parseDays(text = '') {
   }
 
   return days.map((day) => ({ ...day, content: day.content.join('\n').trim() }));
+}
+
+function MarkdownContent({ children }) {
+  const markdown = children.replace(/[ \t]+\|[ \t]*\|[ \t]*/g, '|\n|');
+
+  return (
+    <div className="markdown-content">
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          table: ({ node, ...props }) => (
+            <div className="markdown-table-wrap"><table {...props} /></div>
+          ),
+        }}
+      >
+        {markdown}
+      </ReactMarkdown>
+    </div>
+  );
 }
 
 function App() {
@@ -692,7 +712,7 @@ function App() {
                         {itineraryDays.map((day, index) => (
                           <article className="day-card" key={`${day.title}-${index}`}>
                             <span className="day-number">{String(index + 1).padStart(2, '0')}</span>
-                            <div><h4>{day.title}</h4><div className="markdown-content"><ReactMarkdown>{day.content}</ReactMarkdown></div></div>
+                            <div><h4>{day.title}</h4><MarkdownContent>{day.content}</MarkdownContent></div>
                           </article>
                         ))}
                       </div>
@@ -706,7 +726,7 @@ function App() {
                     {result.complete_plan && (
                       <section className="integrated-summary">
                         <div className="result-block-heading"><span className="result-icon itinerary-result-icon"><Sparkles size={19} /></span><div><p className="eyebrow">LANGGRAPH COMPLETE-PLAN AGENT</p><h3>Your trip, brought together</h3></div></div>
-                        <div className="markdown-content"><ReactMarkdown>{result.complete_plan}</ReactMarkdown></div>
+                        <MarkdownContent>{result.complete_plan}</MarkdownContent>
                       </section>
                     )}
                     <section className="budget-summary">

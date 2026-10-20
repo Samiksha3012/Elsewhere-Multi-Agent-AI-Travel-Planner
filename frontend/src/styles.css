@@ -202,17 +202,21 @@ img { display: block; max-width: 100%; }
 .day-card { display: grid; grid-template-columns: 35px 1fr; gap: 10px; min-width: 0; padding: 17px; border: 1px solid #e8e9ed; background: #fcfcfd; }
 .day-number { display: grid; width: 30px; height: 30px; place-items: center; border: 1px solid #dfe3ec; border-radius: 50%; color: #57638a; font-family: var(--serif); font-size: 11px; }
 .day-card h4 { margin: 3px 0 9px; color: var(--ink); font-family: var(--serif); font-size: 16px; font-weight: 500; }
-.markdown-content { color: #65736b; font-size: 10px; line-height: 1.75; overflow-wrap: anywhere; }
+.markdown-content { color: #52645a; font-size: 13px; line-height: 1.75; overflow-wrap: anywhere; }
 .markdown-content > :last-child { margin-bottom: 0; }
 .markdown-content p { margin: 0 0 8px; }
 .markdown-content ul, .markdown-content ol { margin: 5px 0 9px; padding-left: 17px; }
 .markdown-content li + li { margin-top: 4px; }
-.markdown-content h1, .markdown-content h2, .markdown-content h3, .markdown-content h4 { margin: 11px 0 6px; color: var(--green); font-family: var(--sans); font-size: 10px; font-weight: 700; }
+.markdown-content h1, .markdown-content h2, .markdown-content h3, .markdown-content h4 { margin: 15px 0 7px; color: var(--green); font-family: var(--sans); font-size: 15px; font-weight: 700; line-height: 1.4; }
+.markdown-content h1:first-child, .markdown-content h2:first-child, .markdown-content h3:first-child, .markdown-content h4:first-child { margin-top: 0; }
 .markdown-content strong { color: #355b49; }
+.markdown-table-wrap { max-width: 100%; margin: 12px 0; overflow-x: auto; }
+.markdown-table-wrap table { width: 100%; border-collapse: collapse; font-size: 12px; text-align: left; }
+.markdown-table-wrap th, .markdown-table-wrap td { min-width: 90px; padding: 8px 10px; border: 1px solid #e2e7df; vertical-align: top; }
+.markdown-table-wrap th { color: var(--green-dark); background: #f1f3e8; font-weight: 700; }
+.markdown-table-wrap tr:nth-child(even) td { background: #f8f9f5; }
 .estimate-note { display: flex; align-items: center; gap: 6px; margin: 14px 0 0; color: #818b7a; font-size: 9px; }
 .estimate-note svg { color: #a1a95f; }
-.integrated-summary { margin-top: 20px; padding: 21px; border: 1px solid #e5e8dc; background: #fbfcf6; }
-.integrated-summary .markdown-content { margin: 13px 0 0 49px; }
 .integrated-summary { margin-top: 20px; padding: 21px; border: 1px solid #e5e8dc; background: #fbfcf6; }
 .integrated-summary .markdown-content { margin: 13px 0 0 49px; }
 .budget-summary { display: grid; grid-template-columns: .9fr 1.1fr; gap: 20px 30px; margin-top: 20px; padding: 21px; background: #f1f3e8; }
@@ -348,13 +352,13 @@ img { display: block; max-width: 100%; }
   .integrated-summary { padding: 15px; }
   .integrated-summary .markdown-content { margin-left: 0; }
   .flight-results { grid-template-columns: 1fr; }
-  .integrated-summary { padding: 15px; }
-  .integrated-summary .markdown-content { margin-left: 0; }
   .stay-result { grid-template-columns: 25px 1fr; gap: 8px; padding-inline: 0; }
   .source-link { grid-column: 2; }
   .day-grid { grid-template-columns: 1fr; gap: 9px; }
   .day-card { padding: 13px; }
-  .markdown-content { font-size: 9px; }
+  .markdown-content { font-size: 12px; }
+  .markdown-table-wrap table { font-size: 11px; }
+  .markdown-table-wrap th, .markdown-table-wrap td { padding: 7px; }
   .budget-summary { grid-template-columns: 1fr; gap: 15px; padding: 15px; }
   .budget-summary > p { grid-column: 1; }
   .budget-lines > div { font-size: 8px; }

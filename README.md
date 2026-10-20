@@ -101,14 +101,21 @@ flowchart TD
     subgraph G["LangGraph workflow"]
         direction TB
         S(("Start"))
-        F["Flight agent"]
-        H["Hotel agent"]
-        I["Itinerary agent"]
+        F["Flight agent<br/>(when flights selected)"]
+        H["Hotel agent<br/>(when hotels selected)"]
+        I["Itinerary agent<br/>(when itinerary selected)"]
         R["Final response agent<br/>(complete plan only)"]
+        E(("End"))
         S --> F
         S --> H
-        F & H --> I
-        I --> R
+        F -->|"selected flight research complete"| I
+        H -->|"selected hotel research complete"| I
+        S -. "itinerary-only request" .-> I
+        F -. "flights-only request" .-> E
+        H -. "hotels-only request" .-> E
+        I -->|"all sections selected"| R
+        I -. "focused itinerary request" .-> E
+        R --> E
     end
     AV[("Aviationstack")]
     TV[("Tavily")]
